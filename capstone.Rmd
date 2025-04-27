@@ -1,0 +1,212 @@
+---
+title: Data Analysis
+
+author: "Tung Tran"
+date: "2025-03-16"
+output: html_document
+---
+
+Question : My research question is to see if the predictors can adequately predict the sufficiency of removing invasive clams off boats.
+
+
+       J. Filename: hot_water_removal.csv      
+     
+      Contents: Includes information about the max temperature and duration of water sprayed on each boat section by each decontaminator participant. Also includes the location where the decontamination took place, duration of the decontamination, steps that were taken, decontaminaiton unit type, and sufficiency rankings.
+	
+       
+       Name: prep_duration
+       Description: duration (HH:MM:SS) a decontaminator spent preping for their water decontamination process (the time in between hand inspection and water deocntamination)
+       
+    J. Name: decon_duration
+       Description:duration (HH:MM:SS) of a decontaminators water decontamination step 
+       
+       . Name: inspection_duration
+       Description: duration (HH:MM:SS) of a participants hand inspection step
+       
+       
+```{r}
+
+
+hot_water_removal = read.csv("C:/Users/avist/Desktop/raw data/hot_water_removal.csv")
+
+#Theres some NA values so im cleaning it
+hot_water_removal_clean = na.omit(hot_water_removal)
+
+#1 for sufficient, 0 for not
+hot_water_removal_clean$overall_sufficiency = ifelse(hot_water_removal_clean$overall_sufficiency == "Sufficient", 1, 0)
+hot_water_removal_clean$overall_sufficiency
+
+
+```
+
+
+
+```{r}
+
+#The code is transforming time-based variables (in the format HH:MM:SS) into numeric values representing the total number of seconds for each corresponding variable. This makes it easier to analyze and model these duration in subsequent statistical analysis.
+
+
+hot_water_removal_clean$prep_duration_seconds = as.numeric(as.difftime(hot_water_removal_clean$prep_duration, format = "%H:%M:%S"))
+hot_water_removal_clean$decon_duration_seconds = as.numeric(as.difftime(hot_water_removal_clean$decon_duration, format = "%H:%M:%S"))
+hot_water_removal_clean$inspection_duration_seconds = as.numeric(as.difftime(hot_water_removal_clean$inspection_duration, format = "%H:%M:%S"))
+
+
+#Seeing which variables have correlation ( -1 to 1 ) 
+cor_matrix = cor(hot_water_removal_clean[, c("prep_duration_seconds", "decon_duration_seconds", "inspection_duration_seconds", "max_temp")])
+
+#It seems like only MAX temp has a low correlation to the other variables
+
+
+boxplot(max_temp ~ overall_sufficiency, data = hot_water_removal_clean )
+#Comparing the median, the suffiencent seems to have a higher median
+
+
+hist(hot_water_removal_clean$max_temp, breaks = 20)
+#this is one of the challenge since its unusual because the tempt of 0. Large sum of 0 is an indication (our data is inaccurate because having 0 as a max temperature does not make sense)
+mean(hot_water_removal_clean$max_temp == 0)
+
+```
+
+
+High correlations:
+
+total_duration_seconds and prep_duration_seconds have a strong positive correlation of 0.6338. This suggests that as one of these variables increases, the other tends to increase as well.
+total_duration_seconds and decon_duration_seconds have a moderate positive correlation of 0.7181, meaning they are somewhat related.
+decon_duration_seconds and inspection_duration_seconds show a moderate positive correlation of 0.4341.
+
+
+Low or weak correlations:
+
+The correlations between max_temp and other variables (such as total_duration_seconds, prep_duration_seconds, and decon_duration_seconds) are low. For example, the correlation between total_duration_seconds and max_temp is only 0.1979, suggesting a weak positive relationship between them.
+
+
+Near-zero correlations:
+
+prep_duration_seconds and decon_duration_seconds have a very weak negative correlation of -0.0114, indicating almost no relationship between these two variables.
+
+
+
+#test and training 
+```{r}
+library(glmnet)
+library(caret)
+
+# Split data
+train_index = sample(1:nrow(hot_water_removal_clean), 0.8 * nrow(hot_water_removal_clean))
+train_data = hot_water_removal_clean[train_index, ]
+test_data = hot_water_removal_clean[-train_index, ]
+
+# Create design matrices
+train_x = model.matrix(overall_sufficiency ~  prep_duration_seconds + 
+                       decon_duration_seconds + inspection_duration_seconds + max_temp, data = train_data)
+
+test_x = model.matrix(overall_sufficiency ~  prep_duration_seconds + 
+                      decon_duration_seconds + inspection_duration_seconds + max_temp, data = test_data)
+
+# Stepwise logistic regression
+model = glm(overall_sufficiency ~ prep_duration_seconds + 
+            decon_duration_seconds + inspection_duration_seconds + max_temp, 
+            data = train_data, family = "binomial")
+model
+
+step_model = step(model, direction = "both")
+coef(step_model)
+# Lasso with cross-validation
+cv_lasso = cv.glmnet(train_x, train_data$overall_sufficiency, alpha = 1, family = "binomial")
+best_lambda_lasso = cv_lasso$lambda.min
+lasso_model = glmnet(train_x, train_data$overall_sufficiency, alpha = 1, lambda = best_lambda_lasso, family = "binomial")
+coef(lasso_model)
+# Ridge with cross-validation
+cv_ridge = cv.glmnet(train_x, train_data$overall_sufficiency, alpha = 0, family = "binomial")
+best_lambda_ridge = cv_ridge$lambda.min
+ridge_model = glmnet(train_x, train_data$overall_sufficiency, alpha = 0, lambda = best_lambda_ridge, family = "binomial")
+coef(ridge_model)
+# Print optimal lambdas
+cat("Best lambda (Lasso):", best_lambda_lasso, "\n")
+cat("Best lambda (Ridge):", best_lambda_ridge, "\n")
+
+
+
+# Make predictions
+predictions_ridge_test = predict(ridge_model, newx = test_x, type = "response", s = best_lambda_ridge)
+predictions_lasso_test = predict(lasso_model, newx = test_x, type = "response", s = best_lambda_lasso)
+predictions_step_test = predict(step_model, newdata = test_data, type = "response")
+
+
+# Thresholding
+threshold = 0.5
+predictions_ridge_binary = ifelse(predictions_ridge_test > threshold, 1, 0)
+predictions_lasso_binary = ifelse(predictions_lasso_test > threshold, 1, 0)
+predictions_step_binary = ifelse(predictions_step_test > threshold, 1, 0)
+
+
+
+# Confusion matrices
+confusion_ridge = confusionMatrix(as.factor(predictions_ridge_binary), as.factor(actual_labels))
+confusion_lasso = confusionMatrix(as.factor(predictions_lasso_binary), as.factor(actual_labels))
+confusion_step = confusionMatrix(as.factor(predictions_step_binary), as.factor(actual_labels))
+
+# Output
+confusion_ridge
+confusion_lasso
+confusion_step
+
+
+
+```
+
+
+```{r}
+
+
+all_predictors = c("prep_duration_seconds", 
+                   "decon_duration_seconds", "inspection_duration_seconds", "max_temp")
+
+## ---- STEPWISE ----
+cat("\n--- Stepwise: Dropped Predictors ---\n")
+stepwise_coefs = coef(step_model)
+stepwise_dropped = setdiff(all_predictors, names(stepwise_coefs)[stepwise_coefs != 0])
+cat("Dropped by Stepwise:\n")
+print(stepwise_dropped)
+
+
+## ---- LASSO ----
+cat("\n--- Lasso: Shrunk Predictors (coef = 0) ---\n")
+lasso_coefs = coef(cv_lasso, s = "lambda.min")
+lasso_coefs_matrix = as.matrix(lasso_coefs)  # Convert to regular matrix
+lasso_dropped = rownames(lasso_coefs_matrix)[lasso_coefs_matrix == 0]
+lasso_dropped = setdiff(lasso_dropped, "(Intercept)")  # remove intercept
+cat("Shrunk by Lasso:\n")
+print(lasso_dropped)
+
+
+#---- RIDGE ----
+cat("\n--- Ridge: Shrunk Predictors (|coef| < 0.01) ---\n")
+ridge_coefs = coef(cv_ridge, s = "lambda.min")
+ridge_coefs_matrix = as.matrix(ridge_coefs)  # Convert to regular matrix
+ridge_values = ridge_coefs_matrix[, 1]  # Extract coefficients
+ridge_names = rownames(ridge_coefs_matrix)
+
+# Define a threshold for "shrunk" coefficients (e.g., smaller than 0.01)
+threshold = 0.01
+shrunk_idx = which(abs(ridge_values) < threshold & ridge_names != "(Intercept)")
+ridge_shrunk = ridge_names[shrunk_idx]
+cat("Shrunk by Ridge (|coef| < 0.01):\n")
+print(ridge_shrunk)
+
+
+
+```
+
+
+```{r}
+
+
+plot(cv_lasso$glmnet.fit, xvar = "lambda", label = TRUE)
+title("Lasso Coefficient Path")
+
+plot(cv_ridge$glmnet.fit, xvar = "lambda", label = TRUE)
+title("Ridge Coefficient Path")
+
+coef(ridge_model)
+```
