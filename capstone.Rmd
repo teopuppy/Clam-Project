@@ -1,5 +1,5 @@
 ---
-title: Data Analysis
+title: Data Analysis for Clam Removal 
 
 author: "Tung Tran"
 date: "2025-03-16"
@@ -8,24 +8,22 @@ output: html_document
 
 Question : My research question is to see if the predictors can adequately predict the sufficiency of removing invasive clams off boats.
 
-
-       J. Filename: hot_water_removal.csv      
+Filename: hot_water_removal.csv      
      
-      Contents: Includes information about the max temperature and duration of water sprayed on each boat section by each decontaminator participant. Also includes the location where the decontamination took place, duration of the decontamination, steps that were taken, decontaminaiton unit type, and sufficiency rankings.
+Contents: Includes information about the max temperature and duration of water sprayed on each boat section by each decontaminator participant. Also includes the location where the decontamination took place, duration of the decontamination, steps that were taken, decontaminaiton unit type, and sufficiency rankings.
 	
        
-       Name: prep_duration
-       Description: duration (HH:MM:SS) a decontaminator spent preping for their water decontamination process (the time in between hand inspection and water deocntamination)
+Name: prep_duration
+Description: duration (HH:MM:SS) a decontaminator spent preping for their water decontamination process (the time in between hand inspection and water deocntamination)
+
+Name: decon_duration
+Description:duration (HH:MM:SS) of a decontaminators water decontamination step 
        
-    J. Name: decon_duration
-       Description:duration (HH:MM:SS) of a decontaminators water decontamination step 
-       
-       . Name: inspection_duration
-       Description: duration (HH:MM:SS) of a participants hand inspection step
+Name: inspection_duration
+Description: duration (HH:MM:SS) of a participants hand inspection step
        
        
 ```{r}
-
 
 hot_water_removal = read.csv("C:/Users/avist/Desktop/raw data/hot_water_removal.csv")
 
@@ -35,7 +33,6 @@ hot_water_removal_clean = na.omit(hot_water_removal)
 #1 for sufficient, 0 for not
 hot_water_removal_clean$overall_sufficiency = ifelse(hot_water_removal_clean$overall_sufficiency == "Sufficient", 1, 0)
 hot_water_removal_clean$overall_sufficiency
-
 
 ```
 
@@ -56,10 +53,8 @@ cor_matrix = cor(hot_water_removal_clean[, c("prep_duration_seconds", "decon_dur
 
 #It seems like only MAX temp has a low correlation to the other variables
 
-
 boxplot(max_temp ~ overall_sufficiency, data = hot_water_removal_clean )
 #Comparing the median, the suffiencent seems to have a higher median
-
 
 hist(hot_water_removal_clean$max_temp, breaks = 20)
 #this is one of the challenge since its unusual because the tempt of 0. Large sum of 0 is an indication (our data is inaccurate because having 0 as a max temperature does not make sense)
@@ -67,23 +62,19 @@ mean(hot_water_removal_clean$max_temp == 0)
 
 ```
 
-
 High correlations:
 
 total_duration_seconds and prep_duration_seconds have a strong positive correlation of 0.6338. This suggests that as one of these variables increases, the other tends to increase as well.
 total_duration_seconds and decon_duration_seconds have a moderate positive correlation of 0.7181, meaning they are somewhat related.
 decon_duration_seconds and inspection_duration_seconds show a moderate positive correlation of 0.4341.
 
-
 Low or weak correlations:
 
 The correlations between max_temp and other variables (such as total_duration_seconds, prep_duration_seconds, and decon_duration_seconds) are low. For example, the correlation between total_duration_seconds and max_temp is only 0.1979, suggesting a weak positive relationship between them.
 
-
 Near-zero correlations:
 
 prep_duration_seconds and decon_duration_seconds have a very weak negative correlation of -0.0114, indicating almost no relationship between these two variables.
-
 
 
 #test and training 
@@ -151,18 +142,14 @@ confusion_ridge
 confusion_lasso
 confusion_step
 
-
-
 ```
 
 
 ```{r}
 
-
 all_predictors = c("prep_duration_seconds", 
                    "decon_duration_seconds", "inspection_duration_seconds", "max_temp")
-
-## ---- STEPWISE ----
+#STEPWISE 
 cat("\n--- Stepwise: Dropped Predictors ---\n")
 stepwise_coefs = coef(step_model)
 stepwise_dropped = setdiff(all_predictors, names(stepwise_coefs)[stepwise_coefs != 0])
@@ -170,7 +157,7 @@ cat("Dropped by Stepwise:\n")
 print(stepwise_dropped)
 
 
-## ---- LASSO ----
+#LASSO
 cat("\n--- Lasso: Shrunk Predictors (coef = 0) ---\n")
 lasso_coefs = coef(cv_lasso, s = "lambda.min")
 lasso_coefs_matrix = as.matrix(lasso_coefs)  # Convert to regular matrix
@@ -180,27 +167,24 @@ cat("Shrunk by Lasso:\n")
 print(lasso_dropped)
 
 
-#---- RIDGE ----
+#RIDGE
 cat("\n--- Ridge: Shrunk Predictors (|coef| < 0.01) ---\n")
 ridge_coefs = coef(cv_ridge, s = "lambda.min")
 ridge_coefs_matrix = as.matrix(ridge_coefs)  # Convert to regular matrix
 ridge_values = ridge_coefs_matrix[, 1]  # Extract coefficients
 ridge_names = rownames(ridge_coefs_matrix)
 
-# Define a threshold for "shrunk" coefficients (e.g., smaller than 0.01)
+# Define a threshold for "shrunk" coefficients
 threshold = 0.01
 shrunk_idx = which(abs(ridge_values) < threshold & ridge_names != "(Intercept)")
 ridge_shrunk = ridge_names[shrunk_idx]
 cat("Shrunk by Ridge (|coef| < 0.01):\n")
 print(ridge_shrunk)
 
-
-
 ```
 
 
 ```{r}
-
 
 plot(cv_lasso$glmnet.fit, xvar = "lambda", label = TRUE)
 title("Lasso Coefficient Path")
@@ -209,4 +193,5 @@ plot(cv_ridge$glmnet.fit, xvar = "lambda", label = TRUE)
 title("Ridge Coefficient Path")
 
 coef(ridge_model)
+
 ```
