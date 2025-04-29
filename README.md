@@ -1,0 +1,1 @@
+Presented findings to a group of 30, effectively communicating technical insights. This data analysis is used to come up with the most efficient predictor from a model to pick out which predictor is the most sufficient for invasive clam removals from lakes in Minnesota.
